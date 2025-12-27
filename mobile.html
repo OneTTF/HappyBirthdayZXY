@@ -1,0 +1,135 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <style>
+        body {
+            margin: 0;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            background-color: #ffffff;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            max-width: 100%;
+            height: auto;
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
+            border-radius: 12px;
+        }
+        #rain-container { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; z-index: 10; }
+        .cake { position: absolute; top: -10%; will-change: transform; animation: fall var(--duration, 10s) linear var(--delay, 0s) infinite; opacity: 0.9; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.15)); }
+        @keyframes fall { 0% { transform: translate3d(0, -120%, 0);} 100% { transform: translate3d(0, 120vh, 0);} }
+        #musicBtn { position: fixed; top: 12px; right: 12px; z-index: 20; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; padding: 0; border: 2px solid #111; border-radius: 50%; background: transparent; color: #111; font-size: 16px; line-height: 1; cursor: pointer; box-shadow: none; }
+        #intro { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #fff5f7, #f0f9ff); z-index: 30; }
+        #intro .box { text-align: center; padding: 0; background: transparent; box-shadow: none; transform: translateY(-8vh); }
+        #intro h1 { display: none; }
+        #intro p { margin: 0 0 18px; color: #222; font-size: 14px; letter-spacing: 1px; }
+        #startBtn { padding: 10px 16px; border: 1.5px solid #2e7d32; border-radius: 10px; background: #fff; color: #2e7d32; font-size: 14px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div id="intro" role="dialog" aria-modal="true">
+        <div class="box">
+            <p>温馨提醒：佩戴耳机并提高音量可获得最佳体验哦 😊</p>
+            <button id="startBtn" type="button">准备好了，我们开始吧！</button>
+        </div>
+    </div>
+    <canvas id="canvas" width="1000" height="800"></canvas>
+    <div id="rain-container" aria-hidden="true"></div>
+    <audio id="bgm" src="music.mp3" preload="auto" loop></audio>
+    <button id="musicBtn" type="button">▶</button>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const BASE = { w: 1000, h: 800 };
+        function setupCanvas(){ const dpr=Math.max(1, window.devicePixelRatio||1); const displayWidth=Math.round(canvas.clientWidth); const displayHeight=Math.round(canvas.clientHeight || (displayWidth*BASE.h/BASE.w)); canvas.width=Math.max(1, Math.floor(displayWidth*dpr)); canvas.height=Math.max(1, Math.floor(displayHeight*dpr)); applyTransform(); }
+        function applyTransform(){ const cw=canvas.width; const ch=canvas.height; const base=Math.min(cw/BASE.w, ch/BASE.h); const scale=base * cakeScale(); ctx.setTransform(1,0,0,1,0,0); ctx.translate(cw/2, ch/2 - offsetPx()); ctx.scale(scale, -scale); ctx.lineJoin='round'; ctx.lineCap='round'; }
+        ctx.lineJoin='round'; ctx.lineCap='round';
+        const sleep=(ms)=>new Promise(r=>setTimeout(r,ms)); const fast=(ms)=>Math.max(16, ms*(CONFIG.timing.speedFactor));
+
+        const CONFIG={
+            // 祝福文案：显示在蛋糕上方的文本
+            greetingText:'张欣怡 Happy Birthday',
+
+            // 蛋糕雨参数
+            cakeRain:{
+                // 下落的表情/图标集合（会随机选择）
+                icons:['🍰','🎂'],
+                // 生成间隔（毫秒，越小越密集）
+                intervalMs:300,
+                // 初始喷发数量（进入时快速填充屏幕）
+                initialBurst:20,
+                // 图标最小/最大字号（像素）
+                sizeMin:13,
+                sizeMax:36,
+                // 下落总时长上下限（秒，越小越快）
+                durationMin:6,
+                durationMax:12
+            },
+
+            // 样式与布局（按设备自适配）
+            style:{
+                // 桌面端整体缩放比例（>1 放大）
+                scaleDesktop:1.2,
+                // 移动端整体缩放比例（>1 放大）
+                scaleMobile:1.25,
+                // 桌面端下移量（像素，正值往下）
+                offsetDesktopPx:60,
+                // 移动端下移量（像素，正值往下）
+                offsetMobilePx:40,
+                // 桌面端是否绘制描边（false 更干净）
+                showStrokeDesktop:false,
+                // 移动端是否绘制描边（小屏细描边可提升清晰度）
+                showStrokeMobile:false
+            },
+
+            // 绘制与动效节奏
+            timing:{
+                // 速度系数：fast(ms) = max(16, ms * speedFactor)，值越大动画越慢
+                speedFactor:6.0
+            }
+        };
+        function isMobile(){ return (window.innerWidth||0) < 769; }
+        function cakeScale(){ return isMobile()? CONFIG.style.scaleMobile : CONFIG.style.scaleDesktop; }
+        function offsetPx(){ return isMobile()? CONFIG.style.offsetMobilePx : CONFIG.style.offsetDesktopPx; }
+        function strokesEnabled(){ return isMobile()? CONFIG.style.showStrokeMobile : CONFIG.style.showStrokeDesktop; }
+        let playBgm;
+
+        function radians(d){ return (d*Math.PI)/180; }
+        function rgbColor(r,g,b,a=1){ return `rgba(${Math.round(r*255)}, ${Math.round(g*255)}, ${Math.round(b*255)}, ${a})`; }
+        function drawX(a,i){ const t=radians(i); return a*Math.cos(t); }
+        function drawY(b,i){ const t=radians(i); return b*Math.sin(t); }
+        function generateEllipsePoints(i1,i2,a,b,xo,yo,n1=1,n2=1,stepSize=5){ const pts=[]; if(stepSize===0){return pts;} const f=i2>=i1; const step=f?Math.abs(stepSize):-Math.abs(stepSize); let ang=i1; while((f && ang<=i2) || (!f && ang>=i2)){ const x=drawX(a, ang*n1)+xo; const y=drawY(b, ang*n2)+yo; pts.push({x,y}); if(ang===i2){break;} ang+=step; if((f && ang>i2) || (!f && ang<i2)){ ang=i2; } } return pts; }
+        function mergePoints(...groups){ const m=[]; for(const g of groups){ if(!g) continue; for(const p of g){ if(!m.length){ m.push(p); continue;} const last=m[m.length-1]; if(last.x!==p.x || last.y!==p.y){ m.push(p); } } } return m; }
+        async function animateStroke(points,{color,width=1,duration=600}){ if(!points||points.length<2){return;} if(!strokesEnabled()){return;} const seg=points.length-1; const scaled=Math.max(60, duration*(CONFIG.timing.speedFactor)); const step=scaled/seg; ctx.save(); ctx.strokeStyle=color; ctx.lineWidth=width; ctx.lineCap='round'; for(let i=0;i<seg;i++){ const from=points[i]; const to=points[i+1]; ctx.beginPath(); ctx.moveTo(from.x,from.y); ctx.lineTo(to.x,to.y); ctx.stroke(); await sleep(step);} ctx.restore(); }
+        function fillShape(points,color){ if(!points||!points.length){return;} ctx.save(); ctx.beginPath(); ctx.moveTo(points[0].x,points[0].y); for(let i=1;i<points.length;i++){ ctx.lineTo(points[i].x,points[i].y);} ctx.closePath(); ctx.fillStyle=color; ctx.fill(); ctx.restore(); }
+        function clearCanvas(){ ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,canvas.width,canvas.height); ctx.restore(); applyTransform(); }
+        function drawBackground(){ }
+
+        function setupAudio(){ const audio=document.getElementById('bgm'); const btn=document.getElementById('musicBtn'); const update=()=>{ btn.textContent = audio.paused? '▶':'⏸'; }; btn.addEventListener('click',()=>{ if(audio.paused){ audio.play(); } else { audio.pause(); } update(); }); audio.addEventListener('play',update); audio.addEventListener('pause',update); update(); playBgm=()=>{ audio.play().finally(update); }; }
+        function startCakeRain(cfg=CONFIG.cakeRain){ const container=document.getElementById('rain-container'); const cakes=Array.isArray(cfg.icons)&&cfg.icons.length? cfg.icons:['🍰','🎂']; function spawn(){ const el=document.createElement('span'); el.className='cake'; el.textContent=cakes[Math.floor(Math.random()*cakes.length)]; const size=Math.random()*(cfg.sizeMax-cfg.sizeMin)+cfg.sizeMin; el.style.left=Math.random()*100+'vw'; el.style.fontSize=size+'px'; const duration=Math.random()*(cfg.durationMax-cfg.durationMin)+cfg.durationMin; el.style.setProperty('--duration', duration.toFixed(2)+'s'); el.style.setProperty('--delay', (Math.random()*2).toFixed(2)+'s'); container.appendChild(el); setTimeout(()=>el.remove(), (cfg.durationMax+4)*1000); } setInterval(spawn, Math.max(60, cfg.intervalMs)); for(let i=0;i<(cfg.initialBurst||0);i++) setTimeout(spawn, i*120); }
+        function initIntro(){ const intro=document.getElementById('intro'); const startBtn=document.getElementById('startBtn'); if(!startBtn) return; startBtn.addEventListener('click', ()=>{ intro.style.display='none'; if(typeof playBgm==='function') playBgm(); startCakeRain(); drawScene(); }); }
+        async function drawGreeting(y=200){ ctx.save(); ctx.scale(1,-1); ctx.font='bold 64px "Curlz MT", cursive'; ctx.textAlign='center'; ctx.textBaseline='bottom'; ctx.fillStyle=rgbColor(241/255,173/255,209/255); const targetY=-y; for(let a=0;a<=1.001;a+=0.1){ ctx.globalAlpha=a; ctx.fillText(CONFIG.greetingText,0,targetY); await sleep(fast(60)); } ctx.restore(); ctx.globalAlpha=1; }
+        async function drawScene(){ clearCanvas(); applyTransform(); drawBackground(); const baseTopColor=rgbColor(254/255,245/255,247/255); const baseTopPoints=generateEllipsePoints(0,360,150,60,0,-70); const baseBottomColor=rgbColor(246/255,226/255,230/255); const baseBottomPoints=mergePoints([{x:150,y:-70}], generateEllipsePoints(0,180,150,60,0,-70,-1,-1), generateEllipsePoints(180,360,150,70,0,-70)); const timeline=[]; timeline.push(async()=>{ await animateStroke(baseTopPoints,{color:baseTopColor,width:2,duration:700}); }); timeline.push(async()=>{ fillShape(baseTopPoints,baseTopColor); await sleep(fast(150)); }); timeline.push(async()=>{ await animateStroke(baseBottomPoints,{color:baseBottomColor,width:2,duration:700}); }); timeline.push(async()=>{ fillShape(baseBottomPoints,baseBottomColor); await sleep(fast(150)); }); const cakeColor1=rgbColor(203/255,217/255,249/255); const bottomColor=rgbColor(255/255,167/255,157/255); const curveColor1=rgbColor(255/255,240/255,243/255); const topColor1='white'; const lowerMainPoints=mergePoints([{x:120,y:-70},{x:120,y:0}], generateEllipsePoints(0,180,120,48,0,0), [{x:-120,y:-70}], generateEllipsePoints(180,360,120,48,0,-70)); const lowerMirrorPoints=mergePoints(generateEllipsePoints(0,180,120,48,0,-70,-1,-1), generateEllipsePoints(180,360,120,48,0,-60)); const lowerBorderPoints=mergePoints([{x:120,y:0}], generateEllipsePoints(0,1799,120,-18,0,-60,0.1,1,5), [{x:-120,y:0}], generateEllipsePoints(180,0,120,48,0,0)); const lowerTopPoints=mergePoints([{x:110,y:0}], generateEllipsePoints(0,360,110,40,0,2)); timeline.push(async()=>{ await animateStroke(lowerMainPoints,{color:cakeColor1,width:2,duration:900}); }); timeline.push(async()=>{ fillShape(lowerMainPoints,cakeColor1); await sleep(fast(150)); }); timeline.push(async()=>{ await animateStroke(lowerMirrorPoints,{color:bottomColor,width:2,duration:600}); }); timeline.push(async()=>{ fillShape(lowerMirrorPoints,bottomColor); await sleep(fast(120)); }); timeline.push(async()=>{ await animateStroke(lowerBorderPoints,{color:curveColor1,width:2,duration:900}); }); timeline.push(async()=>{ fillShape(lowerBorderPoints,curveColor1); await sleep(fast(120)); }); timeline.push(async()=>{ await animateStroke(lowerTopPoints,{color:topColor1,width:2,duration:600}); }); timeline.push(async()=>{ fillShape(lowerTopPoints,topColor1); await sleep(fast(120)); }); const cakeColor2=rgbColor(111/255,55/255,50/255); const curveColor2=rgbColor(255/255,170/255,160/255); const topColor2=rgbColor(255/255,195/255,190/255); const upperMainPoints=mergePoints([{x:80,y:4},{x:80,y:54}], generateEllipsePoints(0,180,80,32,0,54), [{x:-80,y:4}], generateEllipsePoints(180,360,80,32,0,4)); const upperBorderPoints=mergePoints([{x:80,y:54}], generateEllipsePoints(0,1799,80,-12,0,14,0.1,1,5), [{x:-80,y:54}], generateEllipsePoints(180,0,80,32,0,54)); const upperTopPoints=mergePoints([{x:70,y:54}], generateEllipsePoints(0,360,70,28,0,55)); timeline.push(async()=>{ await animateStroke(upperMainPoints,{color:cakeColor2,width:2,duration:800}); }); timeline.push(async()=>{ fillShape(upperMainPoints,cakeColor2); await sleep(fast(120)); }); timeline.push(async()=>{ await animateStroke(upperBorderPoints,{color:curveColor2,width:2,duration:700}); }); timeline.push(async()=>{ fillShape(upperBorderPoints,curveColor2); await sleep(fast(120)); }); timeline.push(async()=>{ await animateStroke(upperTopPoints,{color:topColor2,width:2,duration:600}); }); timeline.push(async()=>{ fillShape(upperTopPoints,topColor2); await sleep(fast(120)); }); const candles=[{x1:-56,y1:54,x2:-64,y2:104},{x1:-26,y1:44,x2:-34,y2:94},{x1:4,y1:64,x2:-4,y2:114},{x1:34,y1:44,x2:26,y2:94},{x1:64,y1:54,x2:56,y2:104}]; const candleColor=rgbColor(177/255,201/255,233/255); const flameColor=rgbColor(241/255,173/255,209/255); const cakeBodyTopY=Math.max(...upperTopPoints.map((p)=>p.y)); const cakeBodyBottomY=Math.min(...lowerMainPoints.map((p)=>p.y)); const highestFlameY=Math.max(...candles.map((c)=>c.y2+30)); const highestStructureY=Math.max(cakeBodyTopY,highestFlameY); const greetingY=highestStructureY+60; for(const candle of candles){ const bodyPoints=mergePoints([{x:candle.x1,y:candle.y1},{x:candle.x1,y:candle.y2}], generateEllipsePoints(0,180,4,2,candle.x1-4,candle.y2), [{x:candle.x2,y:candle.y1}], generateEllipsePoints(180,360,4,2,candle.x2+4,candle.y1)); const stripes=Array.from({length:5},(_,index)=>{ const offset=index+1; return [{x:candle.x2,y:candle.y1+10*offset},{x:candle.x1,y:candle.y1+10*offset}]; }); const connector=[{x:candle.x1-4,y:candle.y2},{x:candle.x1-4,y:candle.y2+10}]; const flamePoints=generateEllipsePoints(0,360,4,10,candle.x1-4,candle.y2+20); timeline.push(async()=>{ await animateStroke(bodyPoints,{color:candleColor,width:2,duration:500}); }); timeline.push(async()=>{ fillShape(bodyPoints,candleColor); await sleep(fast(80)); }); timeline.push(async()=>{ ctx.save(); ctx.strokeStyle='white'; ctx.lineWidth=2; for(const stripe of stripes){ ctx.beginPath(); ctx.moveTo(stripe[0].x,stripe[0].y); ctx.lineTo(stripe[1].x,stripe[1].y); ctx.stroke(); await sleep(fast(80)); } ctx.restore(); }); timeline.push(async()=>{ await animateStroke(connector,{color:'white',width:2,duration:200}); }); timeline.push(async()=>{ await animateStroke(flamePoints,{color:flameColor,width:2,duration:400}); }); timeline.push(async()=>{ fillShape(flamePoints,flameColor); await sleep(fast(80)); }); }
+            for(const step of timeline){ await step(); }
+            await sleep(fast(200));
+            await drawGreeting(greetingY);
+        }
+
+        setupCanvas();
+        window.addEventListener('resize', setupCanvas);
+        setupAudio();
+        initIntro();
+    </script>
+</body>
+</html>
